@@ -1984,8 +1984,8 @@ def main():
     parser.add_argument("-c", "--config-file", help="path for config file")
     parser.add_argument("-l", "--log-dir", help="directory to save log")
     parser.add_argument("-d", "--data-dir", help="directory to save crawled data")
-    parser.add_argument("-t", "--time", help="elder days to crawler", type=int)
-    parser.add_argument("-p", "--page-num", help="pages to crawler for each arthor", type=int)
+    parser.add_argument("-s", "--since-days", type=int, default=2, help="elder days to crawler")
+    parser.add_argument("-p", "--page-num", type=int, default=10, help="pages to crawler for each arthor")
     # parser.add_argument("--verbose", help="increase output verbosity", action="store_true")
     args = parser.parse_args()
 
@@ -2007,10 +2007,9 @@ def main():
     try:
         
         config = get_config(args.config_file)
-        if args.time:
-            config['since_date'] = args.time
-        if args.page_num:
-            config['max_page_num'] = args.page_num
+        config['since_date'] = args.since_days
+        config['max_page_num'] = args.page_num
+
         if args.data_dir:
             config['data_dir'] = args.data_dir
 
