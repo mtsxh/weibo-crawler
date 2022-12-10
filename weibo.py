@@ -14,6 +14,8 @@ import re
 import sqlite3
 import sys
 import warnings
+import argparse
+
 from collections import OrderedDict
 from datetime import date, datetime, timedelta
 from pathlib import Path
@@ -32,11 +34,7 @@ from util.notify import push_deer
 warnings.filterwarnings("ignore")
 
 # 如果日志文件夹不存在，则创建
-if not os.path.isdir("log/"):
-    os.makedirs("log/")
-logging_path = os.path.split(os.path.realpath(__file__))[0] + os.sep + "logging.conf"
-logging.config.fileConfig(logging_path)
-logger = logging.getLogger("weibo")
+logger = None
 
 
 class Weibo(object):
@@ -53,6 +51,7 @@ class Weibo(object):
         since_date = str(since_date)
         self.since_date = since_date  # 起始时间，即爬取发布日期从该值到现在的微博，形式为yyyy-mm-dd
         self.start_page = config.get("start_page", 1)  # 开始爬的页，如果中途被限制而结束可以用此定义开始页码
+        self.max_page_num = config.get("max_page_num", 10)  # 最多爬的页
         self.write_mode = config[
             "write_mode"
         ]  # 结果信息保存类型，为list形式，可包含csv、mongo和mysql三种类型
@@ -91,7 +90,7 @@ class Weibo(object):
         if not isinstance(user_id_list, list):
             if not os.path.isabs(user_id_list):
                 user_id_list = (
-                    os.path.split(os.path.realpath(__file__))[0] + os.sep + user_id_list
+                    os.path.join(self.data_dir, user_id_list)
                 )
             self.user_config_file_path = user_id_list  # 用户配置文件路径
             user_config_list = self.get_user_config_list(user_id_list)
@@ -113,6 +112,11 @@ class Weibo(object):
         self.got_count = 0  # 存储爬取到的微博数
         self.weibo = []  # 存储爬取到的所有微博信息
         self.weibo_id_list = []  # 存储爬取到的所有微博id
+
+        if config['data_dir']:
+            self.data_dir = config['data_dir']
+        else:
+            self.data_dir = os.path.split(os.path.realpath(__file__))[0]
 
     def validate_config(self, config):
         """验证配置是否正确"""
@@ -167,7 +171,7 @@ class Weibo(object):
         if not isinstance(user_id_list, list):
             if not os.path.isabs(user_id_list):
                 user_id_list = (
-                    os.path.split(os.path.realpath(__file__))[0] + os.sep + user_id_list
+                    os.path.join(self.data_dir, user_id_list)
                 )
             if not os.path.isfile(user_id_list):
                 logger.warning("不存在%s文件", user_id_list)
@@ -220,7 +224,7 @@ class Weibo(object):
 
     def user_to_csv(self):
         """将爬取到的用户信息写入csv文件"""
-        file_dir = os.path.split(os.path.realpath(__file__))[0] + os.sep + "weibo"
+        file_dir = os.path.join(self.data_dir, "weibo")
         if not os.path.isdir(file_dir):
             os.makedirs(file_dir)
         file_path = file_dir + os.sep + "users.csv"
@@ -1061,7 +1065,8 @@ class Weibo(object):
         try:
             js = self.get_weibo_json(page)
             import json
-            with open('js.json','w') as f:
+            js_json_path = os.path.join(self.data_dir, 'js.json')
+            with open(js_json_path,'w') as f:
                 #写入方式1，等价于下面这行
                 json.dump(js,f) #把列表numbers内容写入到"list.json"文件中
             if js["ok"]:
@@ -1241,13 +1246,7 @@ class Weibo(object):
             dir_name = self.user["screen_name"]
             if self.result_dir_name:
                 dir_name = self.user_config["user_id"]
-            file_dir = (
-                os.path.split(os.path.realpath(__file__))[0]
-                + os.sep
-                + "weibo"
-                + os.sep
-                + dir_name
-            )
+            file_dir = os.path.join(self.data_dir, "weibo", dir_name)
             if type == "img" or type == "video":
                 file_dir = file_dir + os.sep + type
             if not os.path.isdir(file_dir):
@@ -1276,6 +1275,7 @@ class Weibo(object):
             "转发数",
             "话题",
             "@用户",
+            "发布时间",
         ]
         if not self.filter:
             result_headers2 = ["是否原创", "源用户id", "源用户昵称"]
@@ -1868,6 +1868,8 @@ class Weibo(object):
             today = datetime.strptime(str(date.today()), "%Y-%m-%d")
             if since_date <= today:
                 page_count = self.get_page_count()
+                if self.max_page_num>0:
+                    page_count = min(page_count, self.start_page + self.max_page_num)
                 wrote_count = 0
                 page1 = 0
                 random_pages = random.randint(1, 5)
@@ -1954,13 +1956,14 @@ class Weibo(object):
             logger.exception(e)
 
 
-def get_config():
+def get_config(config_path=None):
     """获取config.json文件信息"""
-    config_path = os.path.split(os.path.realpath(__file__))[0] + os.sep + "config.json"
+    if not config_path:
+        config_path = os.path.split(os.path.realpath(__file__))[0] + os.sep + "config.json"
     if not os.path.isfile(config_path):
         logger.warning(
-            "当前路径：%s 不存在配置文件config.json",
-            (os.path.split(os.path.realpath(__file__))[0] + os.sep),
+            "不存在配置文件%s ",
+            (config_path),
         )
         sys.exit()
     try:
@@ -1975,8 +1978,42 @@ def get_config():
 
 
 def main():
+    global logger
+    parser = argparse.ArgumentParser(description="weibo-crawler 爬取微博信息",
+                                    formatter_class=argparse.ArgumentDefaultsHelpFormatter)
+    parser.add_argument("-c", "--config-file", help="path for config file")
+    parser.add_argument("-l", "--log-dir", help="directory to save log")
+    parser.add_argument("-d", "--data-dir", help="directory to save crawled data")
+    parser.add_argument("-t", "--time", help="elder days to crawler", type=int)
+    parser.add_argument("-p", "--page-num", help="pages to crawler for each arthor", type=int)
+    # parser.add_argument("--verbose", help="increase output verbosity", action="store_true")
+    args = parser.parse_args()
+
+    log_dir = os.path.join(os.path.split(os.path.realpath(__file__))[0], "log")
+    if args.log_dir:
+        log_dir = args.log_dir
+    if not os.path.isdir(log_dir):
+        os.makedirs(log_dir)
+    log_file_all = Path(log_dir) / "all.log"
+    log_file_err = Path(log_dir) / "error.log"
+    logging_path = os.path.join(os.path.split(os.path.realpath(__file__))[0], "logging.conf")
+    logging.config.fileConfig(logging_path, 
+                              defaults={ 
+                                "alllogfilename": log_file_all.as_posix(),
+                                "errorlogfilename": log_file_err.as_posix(),
+                              })
+    logger = logging.getLogger("weibo")
+
     try:
-        config = get_config()
+        
+        config = get_config(args.config_file)
+        if args.time:
+            config['since_date'] = args.time
+        if args.page_num:
+            config['max_page_num'] = args.page_num
+        if args.data_dir:
+            config['data_dir'] = args.data_dir
+
         wb = Weibo(config)
         wb.start()  # 爬取微博信息
         if const.NOTIFY["NOTIFY"]:
