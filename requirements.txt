@@ -4,4 +4,5 @@ pymysql>=1.0.2
 requests>=2.22.0
 tqdm>=4.64.0
 pandas>=1.5.2
+openpyxl>=3.0.10
 PyYAML>=6.0
