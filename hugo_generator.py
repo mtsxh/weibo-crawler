@@ -32,7 +32,7 @@ logger = None
 # logger = logging.getLogger("weibo")
 
 
-userinfo = pd.read_excel(r".\weibo\weibolist.xlsx")
+# userinfo = pd.read_excel(r".\weibo\weibolist.xlsx")
 
 class Hugo_generator:
     def __init__(self, config):
@@ -40,11 +40,11 @@ class Hugo_generator:
         self.post_dir = config.post_dir
         self.static_dir = config.static_dir
         self.data_dir = config.data_dir
+        self.userinfo = pd.read_excel(config.userlist_file)
         self.img_files = glob.glob(self.data_dir + os.sep + '**/*.jpg', recursive=True)
         self.video_files = glob.glob(self.data_dir + os.sep + '**/*.mp4', recursive=True)
         self.user_files = glob.glob(self.data_dir + os.sep + '**/users.csv', recursive=True)
         self.uid_files = glob.glob(self.data_dir + os.sep + '**/*.csv', recursive=True)
-        self.userlist_file = config.userlist_file
         self.since_days = config.since_days
 
     def get_author_info(self, user):
@@ -88,7 +88,7 @@ class Hugo_generator:
     def create_post(self, user_post_path, post_date, user, group):
         uid = int(user['用户id'])
         uname = user['昵称']
-        category = userinfo[userinfo['id']==uid].iloc[0]['category']
+        category = self.userinfo[self.userinfo['id']==uid].iloc[0]['category']
         first = group.iloc[0]
         print(category)
         front_matter = {
